@@ -954,11 +954,15 @@ function showPlaybackError(feedId, error) {
     return;
   }
 
-  // ClearKey/MMS flake on some streams — fall back to server-decrypt proxy
-  // once before declaring the feed dead.
-  if (window.__pbMode && window.__pbMode !== 'proxy' && !window.__proxyFallbackTried) {
-    window.__proxyFallbackTried = true;
-    window.__forceMode = 'proxy';
+  // Client modes flake differently per browser — cycle through every
+  // playback engine (mms → clearkey → proxy) before declaring the feed dead.
+  // On static hosts proxy 404s harmlessly; on Render it still works.
+  const MODES = ['mms', 'clearkey', 'proxy'];
+  window.__modeFallbacks = window.__modeFallbacks || 0;
+  const curIdx = MODES.indexOf(window.__pbMode);
+  if (curIdx >= 0 && window.__modeFallbacks < 2) {
+    window.__modeFallbacks++;
+    window.__forceMode = MODES[(curIdx + 1) % MODES.length];
     if (status) {
       status.textContent = 'SWITCHING';
       status.classList.remove('is-live');
