@@ -7,6 +7,13 @@
   var blocked = false;
   var BLOCK_URL = '/blocked.html';
 
+  // Touch/mobile devices have no devtools and different window metrics —
+  // the heuristics below false-positive on them, so skip those checks.
+  var isTouchMobile = ('ontouchstart' in window) ||
+    navigator.maxTouchPoints > 0 ||
+    /iPad|iPhone|iPod|Android/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
   function block() {
     if (blocked) return;
     blocked = true;
@@ -17,6 +24,7 @@
   // --- 1. DevTools open detection (window chrome size heuristic) ---
   var SIZE_THRESHOLD = 170;
   function sizeCheck() {
+    if (isTouchMobile) return;
     var w = window.outerWidth - window.innerWidth;
     var h = window.outerHeight - window.innerHeight;
     if (w > SIZE_THRESHOLD || h > SIZE_THRESHOLD) block();
@@ -26,7 +34,7 @@
 
   // --- 2. Debugger timing trap ---
   // `debugger` pauses when devtools is open, making this delta large.
-  setInterval(function () {
+  if (!isTouchMobile) setInterval(function () {
     var t0 = performance.now();
     try { (function () { debugger; })(); } catch (e) {}
     if (performance.now() - t0 > 250) block();
