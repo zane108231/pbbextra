@@ -1,0 +1,17 @@
+{
+  "name": "pbb-live-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-view live stream dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "shaka-player": "^5.3.4"
+  }
+}

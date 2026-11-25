@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>PBB Live</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    #feed-video {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    #feed-message {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font: 500 14px/1.4 system-ui, -apple-system, sans-serif;
+      background: #000;
+      text-align: center;
+      padding: 24px;
+      z-index: 10;
+    }
+    #feed-server {
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right));
+      z-index: 20;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font: 600 12px/1.2 system-ui, -apple-system, sans-serif;
+    }
+  </style>
+  <script defer src="/vendor/shaka-player/shaka-player.compiled.js"></script>
+  <script defer src="/js/protect.js?v=3"></script>
+  <script defer src="/js/site-key.js?v=3"></script>
+  <script defer src="/js/ios-player.js?v=3"></script>
+  <script defer src="/js/feed.js?v=3"></script>
+</head>
+<body>
+  <video id="feed-video" autoplay muted playsinline webkit-playsinline></video>
+  <select id="feed-server" aria-label="Stream server">
+    <option value="s1">Server 1 · Cloud Bridge HD</option>
+    <option value="s2">Server 2</option>
+    <option value="s3">Server 3 · Edge Global</option>
+    <option value="s4">Server 4 · Low Latency</option>
+  </select>
+  <div id="feed-message"></div>
+</body>
+</html>

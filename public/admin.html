@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0b0e14; color: #e6e9ef;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 20px;
+  }
+  .card {
+    background: #141926; border: 1px solid #232c3f; border-radius: 14px;
+    padding: 32px; width: 100%; max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .sub { color: #8b93a7; font-size: 13px; margin-bottom: 24px; }
+  label { display: block; font-size: 12px; color: #8b93a7; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+  input[type=password], input[type=text] {
+    width: 100%; padding: 12px 14px; border-radius: 8px;
+    border: 1px solid #2a3450; background: #0d1119; color: #e6e9ef;
+    font-size: 14px; margin-bottom: 16px; outline: none;
+  }
+  input:focus { border-color: #4f7cff; }
+  button {
+    width: 100%; padding: 12px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+    transition: filter .15s;
+  }
+  button:hover { filter: brightness(1.12); }
+  .btn-primary { background: #4f7cff; color: #fff; }
+  .btn-own { background: #1f9d6b; color: #fff; }
+  .btn-remote { background: #3a4356; color: #e6e9ef; border: 1px solid #4a5670; }
+  .status {
+    margin-top: 18px; padding: 14px; border-radius: 8px;
+    background: #0d1119; border: 1px solid #232c3f; font-size: 13px;
+    display: none;
+  }
+  .status.show { display: block; }
+  .status .mode { font-weight: 700; font-size: 15px; }
+  .status .mode.own { color: #4ade80; }
+  .status .mode.remote { color: #60a5fa; }
+  .err { color: #f87171; font-size: 13px; margin-top: 10px; display: none; }
+  .err.show { display: block; }
+  .hint { font-size: 12px; color: #6b7488; margin-top: 14px; line-height: 1.5; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Manifest Source</h1>
+  <div class="sub">Control which manifest chain serves the live feeds.</div>
+
+  <div id="loginView">
+    <label for="key">Admin key</label>
+    <input type="password" id="key" placeholder="Admin key" autocomplete="off">
+    <button class="btn-primary" onclick="login()">Unlock</button>
+    <div class="err" id="loginErr">Invalid key.</div>
+  </div>
+
+  <div id="panelView" class="hidden">
+    <div class="status show" id="statusBox">
+      Current mode: <span class="mode" id="modeLabel">…</span>
+      <div class="hint" id="modeHint"></div>
+    </div>
+    <div style="height:16px"></div>
+    <button class="btn-own" onclick="setMode('own')">Use OWN manifests</button>
+    <button class="btn-remote" onclick="setMode('remote')">Use remote API</button>
+    <div class="err" id="panelErr"></div>
+    <div class="hint">
+      <b>own</b> — fully self-generated manifests; zero external manifest dependency.<br>
+      <b>remote</b> — remote manifest endpoint first, own chain as automatic fallback.<br>
+      Verify with: <code>curl -sI &lt;site&gt;/manifest/all.mpd | grep X-Mpd-Source</code>
+    </div>
+  </div>
+</div>
+
+<script>
+const HINTS = {
+  own: 'Zero remote dependency. If feeds break here, the problem is ours, not theirs.',
+  remote: 'Fresh manifests from the remote endpoint; falls back to own chain if it fails.'
+};
+let KEY = sessionStorage.getItem('pbb_admin_key') || '';
+
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg || '';
+  el.classList.toggle('show', !!msg);
+}
+
+async function api(path, opts) {
+  const sep = path.includes('?') ? '&' : '?';
+  const r = await fetch(`${path}${sep}key=${encodeURIComponent(KEY)}`, opts);
+  if (r.status === 403) throw new Error('forbidden');
+  return r.json();
+}
+
+async function refresh() {
+  try {
+    const { mode } = await api('/admin/manifest-mode');
+    const label = document.getElementById('modeLabel');
+    label.textContent = mode;
+    label.className = 'mode ' + mode;
+    document.getElementById('modeHint').textContent = HINTS[mode] || '';
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('panelView').classList.remove('hidden');
+  } catch (e) {
+    document.getElementById('loginView').classList.remove('hidden');
+    document.getElementById('panelView').classList.add('hidden');
+    showErr('loginErr', e.message === 'forbidden' ? 'Invalid key.' : 'Server error.');
+  }
+}
+
+async function login() {
+  KEY = document.getElementById('key').value.trim();
+  if (!KEY) return;
+  sessionStorage.setItem('pbb_admin_key', KEY);
+  showErr('loginErr', '');
+  await refresh();
+}
+
+async function setMode(mode) {
+  showErr('panelErr', '');
+  try {
+    await api('/admin/manifest-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode })
+    });
+    await refresh();
+  } catch (e) {
+    showErr('panelErr', e.message === 'forbidden' ? 'Session expired — reload and re-enter key.' : 'Failed: ' + e.message);
+    if (e.message === 'forbidden') sessionStorage.removeItem('pbb_admin_key');
+  }
+}
+
+document.getElementById('key').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+refresh();
+</script>
+</body>
+</html>
