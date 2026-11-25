@@ -1,8 +1,7 @@
 'use strict';
 
 const feeds = [
-  { id: 'all', name: 'PBB Extra' },
-  { id: 'main', name: 'Main Broadcast' }
+  { id: 'all', name: 'PBB Extra' }
 ];
 
 const builtInStreams = {

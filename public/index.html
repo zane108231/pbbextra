@@ -14,7 +14,7 @@
     <script defer src="/js/protect.js?v=3"></script>
     <script defer src="/js/site-key.js?v=3"></script>
     <script defer src="/js/ios-player.js?v=4"></script>
-    <script defer src="/js/app.js?v=6"></script>
+    <script defer src="/js/app.js?v=7"></script>
     <script defer src="/js/viewer-count.js"></script>
     <script defer src="/js/chat.js"></script>
   </head>
@@ -107,20 +107,6 @@
                 </div>
               </article>
 
-              <!-- Feed 2: Main Broadcast -->
-              <article class="feed-tile" data-feed-id="main">
-                <div class="tile-video-wrap">
-                  <video id="video-main" playsinline webkit-playsinline muted autoplay preload="auto" aria-label="Main Broadcast video"></video>
-                  <div class="video-empty">
-                    <span class="play-glyph" aria-hidden="true">▶</span>
-                    <span>Connecting feed...</span>
-                  </div>
-                  <div class="tile-badge-pill">
-                    <span class="badge-dot-red" aria-hidden="true">●</span>
-                    <span class="badge-name">Main Broadcast</span>
-                  </div>
-                </div>
-              </article>
             </div>
 
             <!-- Bottom Floating Player Controls Pill (Image 1 reference) -->
@@ -225,17 +211,6 @@
               <span class="feed-status-badge badge--on-air" data-feed-badge="all">ON AIR</span>
             </button>
 
-            <!-- Feed 2: Main Broadcast -->
-            <button class="feed-card" type="button" data-select-id="main">
-              <div class="feed-icon-box">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 0 1.5 9v6A2.5 2.5 0 0 0 4 17.5h10a2.5 2.5 0 0 0 2.5-2.5v-1.1l4.8 3.2a.8.8 0 0 0 1.2-.7V7.6a.8.8 0 0 0-1.2-.7l-4.8 3.2V9A2.5 2.5 0 0 0 14 6.5H4Z"/></svg>
-              </div>
-              <div class="feed-info">
-                <strong class="feed-title">Main Broadcast</strong>
-                <span class="feed-subtitle">Official Feed</span>
-              </div>
-              <span class="feed-status-badge badge--hd" data-feed-badge="main">HD</span>
-            </button>
           </nav>
 
           <section class="live-chat" id="live-chat" aria-labelledby="live-chat-title" data-state="connecting">
