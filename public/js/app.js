@@ -646,9 +646,15 @@ async function loadAllFeeds() {
   if (forcedMode === 'proxy' || forcedMode === 'clearkey' || forcedMode === 'mms') {
     mode = forcedMode;
   } else if (useIosProxy) {
-    mode = useIosMms ? 'mms' : 'proxy';
+    // iOS has no ClearKey and the custom MMS decrypt engine produces
+    // undecodable segments on the current Akamai encode — use the Worker's
+    // server-side decrypt proxy (/stream/*.mpd serves clear DASH, played via
+    // Shaka + ManagedMediaSource on iOS 17.1+).
+    mode = 'proxy';
   } else if (isAndroidDevice()) {
-    mode = mmsOk ? 'mms' : (clearKeyOk ? 'clearkey' : 'proxy');
+    // Android Chrome/Firefox support ClearKey — prefer it over the custom
+    // MMS engine, which emits corrupt segments on this encode.
+    mode = clearKeyOk ? 'clearkey' : (mmsOk ? 'mms' : 'proxy');
   } else {
     // Desktop: always try ClearKey first — the support probe is unreliable
     // (false negatives on Edge), and the mode-fallback chain covers a real

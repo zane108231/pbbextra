@@ -1,0 +1,9 @@
+name = "pbbextra"
+main = "worker/index.js"
+compatibility_date = "2025-06-01"
+
+# Worker handles /stream/* and /d/* first, then falls through to static assets
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
