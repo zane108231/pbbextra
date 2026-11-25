@@ -650,9 +650,10 @@ async function loadAllFeeds() {
     mode = useIosMms ? 'mms' : 'proxy';
   } else if (isAndroidDevice()) {
     mode = mmsOk ? 'mms' : (clearKeyOk ? 'clearkey' : 'proxy');
-  } else if (!clearKeyOk) {
-    mode = mmsOk ? 'mms' : 'proxy';
   } else {
+    // Desktop: always try ClearKey first — the support probe is unreliable
+    // (false negatives on Edge), and the mode-fallback chain covers a real
+    // failure by cycling to mms then proxy.
     mode = 'clearkey';
   }
   const prevMode = window.__pbMode;
