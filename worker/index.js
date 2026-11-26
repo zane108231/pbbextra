@@ -500,6 +500,12 @@ async function resolveKeyForFile(name, initCache) {
 function rewriteManifest(mpdText, origin) {
   // Strip any upstream BaseURL (relative segment URLs must resolve to /d/*)
   let out = mpdText.replace(/<BaseURL>[^<]*<\/BaseURL>/g, '');
+  // Segments are served DECRYPTED — remove all DRM signaling or Shaka
+  // refuses to load (it would look for a key system that isn't configured).
+  out = out
+    .replace(/<ContentProtection[^>]*>[\s\S]*?<\/ContentProtection>/g, '')
+    .replace(/<ContentProtection[^>]*\/>/g, '')
+    .replace(/<cenc:pssh>[\s\S]*?<\/cenc:pssh>/g, '');
   const base = `<BaseURL>${origin}/d/</BaseURL>`;
   // Inject right after the opening <MPD ...> tag, before <Period>
   out = out.replace(/<MPD([^>]*)>/, (m) => m + base);
