@@ -512,6 +512,127 @@ function rewriteManifest(mpdText, origin) {
   return out;
 }
 
+/* ============================================================
+   ChatRoom Durable Object — shared chat history + live viewer
+   count + SSE broadcast for all connected clients.
+   ============================================================ */
+export class ChatRoom {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this._messages = null;
+    this._viewers = null;
+    this.sseClients = new Set();
+  }
+
+  async messages() {
+    if (this._messages === null) {
+      this._messages = (await this.ctx.storage.get('messages')) || [];
+    }
+    return this._messages;
+  }
+
+  async viewers() {
+    if (this._viewers === null) {
+      this._viewers = (await this.ctx.storage.get('viewers')) || {};
+    }
+    return this._viewers;
+  }
+
+  broadcast(event, data) {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const bytes = new TextEncoder().encode(payload);
+    for (const controller of this.sseClients) {
+      try { controller.enqueue(bytes); }
+      catch { this.sseClients.delete(controller); }
+    }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    if (path === '/messages' && request.method === 'GET') {
+      const msgs = await this.messages();
+      return Response.json({ messages: msgs.slice(-50) },
+        { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (path === '/messages' && request.method === 'POST') {
+      let body = {};
+      try { body = await request.json(); } catch {}
+      const name = String(body.name || '').trim();
+      const text = String(body.text || '').trim();
+      if (!name || name.length > 24 || !text || text.length > 280) {
+        return Response.json(
+          { error: 'Enter a name (up to 24 characters) and a message (up to 280 characters).' },
+          { status: 400 });
+      }
+      const msgs = await this.messages();
+      const message = {
+        id: Date.now(),
+        name,
+        text,
+        createdAt: new Date().toISOString(),
+      };
+      msgs.push(message);
+      if (msgs.length > 100) msgs.shift();
+      await this.ctx.storage.put('messages', msgs);
+      this.broadcast('message', message);
+      return Response.json({ message }, { status: 201, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    if (path === '/stream' && request.method === 'GET') {
+      const encoder = new TextEncoder();
+      const self = this;
+      let keepAlive;
+      let controllerRef = null;
+      const stream = new ReadableStream({
+        start(controller) {
+          controllerRef = controller;
+          self.sseClients.add(controller);
+          const send = (s) => { try { controller.enqueue(encoder.encode(s)); } catch {} };
+          keepAlive = setInterval(() => send(': keep-alive\n\n'), 15000);
+          self.messages().then((msgs) => {
+            send(`event: history\ndata: ${JSON.stringify(msgs.slice(-50))}\n\n`);
+          }).catch(() => {});
+        },
+        cancel() {
+          clearInterval(keepAlive);
+          if (controllerRef) self.sseClients.delete(controllerRef);
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+        },
+      });
+    }
+
+    if (path === '/viewers' && request.method === 'POST') {
+      let body = {};
+      try { body = await request.json(); } catch {}
+      const id = String(body.id || '');
+      if (!/^[a-z0-9-]{16,64}$/i.test(id)) {
+        return Response.json({ error: 'invalid viewer id' }, { status: 400 });
+      }
+      const viewers = await this.viewers();
+      const now = Date.now();
+      for (const key of Object.keys(viewers)) {
+        if (now - viewers[key] > 45_000) delete viewers[key];
+      }
+      viewers[id] = now;
+      await this.ctx.storage.put('viewers', viewers);
+      return Response.json({ count: Object.keys(viewers).length },
+        { headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    return new Response('not found', { status: 404 });
+  }
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -519,6 +640,20 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders() });
+    }
+
+    // --- Chat + viewer count API (Durable Object backed) ---
+    if (path.startsWith('/api/chat/') || path === '/api/viewers/heartbeat') {
+      try {
+        const id = env.CHAT_ROOM.idFromName('global');
+        const stub = env.CHAT_ROOM.get(id);
+        const subPath = path === '/api/viewers/heartbeat'
+          ? '/viewers'
+          : path.slice('/api/chat'.length);
+        return await stub.fetch(new Request(`https://chat-room${subPath}${url.search}`, request));
+      } catch (e) {
+        return Response.json({ error: 'chat backend unavailable' }, { status: 503 });
+      }
     }
 
     // --- Clear DASH manifest for proxy-mode clients (iOS/Android fallback) ---

@@ -498,6 +498,9 @@ body {
   box-shadow: 0 16px 44px rgba(0, 0, 0, 0.7);
   transition: opacity 250ms ease, transform 250ms ease;
   user-select: none;
+  -webkit-user-select: none;
+  /* iOS/Android: taps on controls shouldn't scroll or zoom the page */
+  touch-action: manipulation;
   max-width: calc(100% - 24px);
 }
 
@@ -619,6 +622,10 @@ body {
   outline: none;
   cursor: pointer;
   transition: background 150ms ease;
+  /* iOS: keep drags on the slider — no page pan/zoom while adjusting */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pill-vol-slider::-webkit-slider-thumb {

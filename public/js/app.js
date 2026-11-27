@@ -86,7 +86,6 @@ function buildIosProxyManifestUrl(feedId, baseUrl) {
   const url = new URL(baseUrl.href);
   const basePath = url.pathname.replace(/\/+$/, '');
   url.pathname = `${basePath}/stream/${encodeURIComponent(feedId)}.mpd`;
-  url.searchParams.set('srv', currentServer);
   if (window.PBB_SITE_KEY) url.searchParams.set('k', window.PBB_SITE_KEY);
   return url;
 }
@@ -359,16 +358,6 @@ if (volSlider) {
   });
 }
 
-// Multi-View Toggle Button
-if (btnMultiView) {
-  btnMultiView.addEventListener('click', (e) => {
-    e.stopPropagation();
-    audioBooster.ensureContextRunning();
-    const isGrid = stage.classList.contains('stage--grid');
-    setLayout(isGrid ? 'single' : 'grid');
-  });
-}
-
 // Theater / Miniplayer Button
 if (btnTheater) {
   btnTheater.addEventListener('click', (e) => {
@@ -400,46 +389,6 @@ if (btnQuality && qualityDropdown) {
       setQuality(targetQuality);
       qualityDropdown.hidden = true;
       btnQuality.setAttribute('aria-expanded', 'false');
-    });
-  });
-}
-
-// Server selector (s1-s4 manifest routes)
-if (btnServer && serverDropdown) {
-  const SERVER_LABELS = { s1: 'S1', s2: 'S2', s3: 'S3', s4: 'S4' };
-  if (serverBadgeText) serverBadgeText.textContent = SERVER_LABELS[currentServer] || 'S1';
-  serverDropdown.querySelectorAll('.quality-menu-item').forEach((item) => {
-    item.classList.toggle('is-active', item.dataset.server === currentServer);
-  });
-
-  btnServer.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isHidden = serverDropdown.hidden;
-    serverDropdown.hidden = !isHidden;
-    btnServer.setAttribute('aria-expanded', String(!isHidden));
-  });
-
-  document.addEventListener('click', (e) => {
-    if (!serverDropdown.contains(e.target) && e.target !== btnServer) {
-      serverDropdown.hidden = true;
-      btnServer.setAttribute('aria-expanded', 'false');
-    }
-  });
-
-  serverDropdown.querySelectorAll('.quality-menu-item').forEach((item) => {
-    item.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const next = item.dataset.server;
-      serverDropdown.hidden = true;
-      btnServer.setAttribute('aria-expanded', 'false');
-      if (!next || next === currentServer) return;
-      currentServer = next;
-      localStorage.setItem('pbb-server', next);
-      if (serverBadgeText) serverBadgeText.textContent = SERVER_LABELS[next] || next.toUpperCase();
-      serverDropdown.querySelectorAll('.quality-menu-item').forEach((el) => {
-        el.classList.toggle('is-active', el.dataset.server === next);
-      });
-      loadAllFeeds();
     });
   });
 }
@@ -683,7 +632,6 @@ async function loadAllFeeds() {
         ? new URL(stream0.directMpd)
         : new URL(`${window.location.origin}/${mode === 'mms' ? 'manifest' : 'stream'}/${feed.id}.mpd`);
       if (!stream0.directMpd || mode !== 'mms') {
-        u.searchParams.set('srv', currentServer);
         if (window.PBB_SITE_KEY) u.searchParams.set('k', window.PBB_SITE_KEY);
       }
       if (mode === 'mms') {
@@ -700,7 +648,6 @@ async function loadAllFeeds() {
       ? new URL(stream.directMpd)
       : new URL(`${window.location.origin}/manifest/${feed.id}.mpd`);
     if (!stream.directMpd) {
-      manifestUrl.searchParams.set('srv', currentServer);
       if (window.PBB_SITE_KEY) manifestUrl.searchParams.set('k', window.PBB_SITE_KEY);
     }
     return loadFeed(feed.id, manifestUrl, {
@@ -1348,6 +1295,16 @@ async function toggleFullscreen() {
         await document.webkitExitFullscreen();
       }
       return;
+    }
+
+    // iPhone/iPad Safari has no element fullscreen API — use the video's
+    // native fullscreen instead (auto-rotates to landscape, native controls).
+    if (isIOSDevice()) {
+      const v = feedState.get(selectedFeedId)?.video;
+      if (v && v.webkitEnterFullscreen) {
+        v.webkitEnterFullscreen();
+        return;
+      }
     }
 
     // Go fullscreen on the unified playerContainer so controls & unmute overlay remain accessible!

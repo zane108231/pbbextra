@@ -9,14 +9,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=2">
     <script defer src="/vendor/shaka-player/shaka-player.compiled.js"></script>
     <script defer src="/js/protect.js?v=4"></script>
     <script defer src="/js/site-key.js?v=3"></script>
     <script defer src="/js/ios-player.js?v=4"></script>
-    <script defer src="/js/app.js?v=8"></script>
+    <script defer src="/js/app.js?v=9"></script>
     <script defer src="/js/viewer-count.js"></script>
-    <script defer src="/js/chat.js"></script>
+    <script defer src="/js/chat.js?v=2"></script>
   </head>
   <body>
     <div class="site-loader" id="site-loader" aria-label="Loading PBB Live Studio">
@@ -146,11 +146,6 @@
                   </div>
                 </div>
 
-                <button class="pill-btn pill-btn--label" id="btn-multiview" type="button" aria-label="Multi-View" title="Multi-View">
-                  <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
-                  <span>Multi-View</span>
-                </button>
-
                 <button class="pill-btn pill-btn--icon" id="btn-theater" type="button" aria-label="Miniplayer / Picture in Picture" title="Miniplayer">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/></svg>
                 </button>
@@ -165,18 +160,6 @@
                     <button class="quality-menu-item" type="button" data-quality="720">720p</button>
                     <button class="quality-menu-item" type="button" data-quality="360">360p</button>
                     <button class="quality-menu-item" type="button" data-quality="180">180p</button>
-                  </div>
-                </div>
-
-                <div class="pill-quality-menu-wrap pill-server-menu-wrap">
-                  <button class="pill-btn pill-btn--label pill-btn--quality" id="btn-server" type="button" aria-haspopup="true" aria-expanded="false" title="Stream Server">
-                    <span id="server-badge-text">S1</span>
-                  </button>
-                  <div class="quality-dropdown-menu" id="server-dropdown-menu" hidden>
-                    <button class="quality-menu-item is-active" type="button" data-server="s1">Server 1 · Cloud Bridge HD</button>
-                    <button class="quality-menu-item" type="button" data-server="s2">Server 2</button>
-                    <button class="quality-menu-item" type="button" data-server="s3">Server 3 · Edge Global</button>
-                    <button class="quality-menu-item" type="button" data-server="s4">Server 4 · Low Latency</button>
                   </div>
                 </div>
 
