@@ -12,6 +12,7 @@ const http = require('http');
 const crypto = require('crypto');
 
 const IW_ENTITLEMENT = 'https://api.iwanttfc.com/entitlement';
+const IW_IDENTITY = 'https://api.iwanttfc.com/identity';
 const IW_HEADERS = {
   'Content-Type': 'application/json',
   'Accept': 'application/json',
@@ -21,6 +22,33 @@ const IW_HEADERS = {
   'Origin': 'https://www.iwanttfc.com',
   'Referer': 'https://www.iwanttfc.com/',
 };
+
+// EPS requires a logged-in iWant user from datacenter IPs. The refresh
+// token (from iwanttfc.com localStorage) mints access tokens forever.
+const REFRESH_TOKEN = process.env.IWANT_REFRESH_TOKEN || '';
+let cachedAccessToken = null;
+let accessTokenExp = 0;
+
+async function getAccessToken() {
+  if (!REFRESH_TOKEN) return null;
+  if (cachedAccessToken && Date.now() < accessTokenExp - 60_000) return cachedAccessToken;
+  const res = await fetch(`${IW_IDENTITY}/api/iam/refresh?api-version=1.2`, {
+    method: 'POST',
+    headers: IW_HEADERS,
+    body: JSON.stringify({ token: REFRESH_TOKEN, country: 'PH' }),
+  });
+  if (!res.ok) throw new Error('token refresh ' + res.status);
+  const json = await res.json();
+  const data = json.data || {};
+  if (!data.accessToken) throw new Error('no access token in refresh response');
+  cachedAccessToken = data.accessToken;
+  // Decode exp claim (JWT payload) — refresh 1 min early
+  try {
+    const payload = JSON.parse(Buffer.from(cachedAccessToken.split('.')[1], 'base64url').toString());
+    accessTokenExp = (payload.exp || 0) * 1000;
+  } catch { accessTokenExp = Date.now() + 30 * 60_000; }
+  return cachedAccessToken;
+}
 
 const KINDS = {
   wv: { drm: ['wv'], streamType: ['dash'], subPlatform: 'chrome', manifest: 'manifest.mpd' },
@@ -51,7 +79,10 @@ async function startPlayback(epId, kind) {
     referralProperties: { pageName: 'details' },
   };
   const url = `${IW_ENTITLEMENT}/playback/start/${epId}?offline=false&country=PH&contentId=${epId}&platform=web&subPlatform=${k.subPlatform}`;
-  const res = await fetch(url, { method: 'POST', headers: IW_HEADERS, body: JSON.stringify(body) });
+  const headers = { ...IW_HEADERS };
+  const accessToken = await getAccessToken();
+  if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`playback/start ${res.status}: ${text.slice(0, 200)}`);
   const json = JSON.parse(text);
