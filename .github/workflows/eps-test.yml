@@ -1,0 +1,19 @@
+name: eps-test
+on: [workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: test playback/start with valid UUID
+        run: |
+          EP=38881f38-eda3-4bdd-b33a-395e67cbe07c
+          SID=$(cat /proc/sys/kernel/random/uuid)
+          RESP=$(curl -s -w '\nHTTP:%{http_code}' -X POST "https://api.iwanttfc.com/entitlement/playback/start/$EP?offline=false&country=PH&contentId=$EP&platform=web&subPlatform=chrome" \
+            -H 'Content-Type: application/json' -H 'x-country-code: PH' -H 'x-device-platform: web' \
+            -H 'X-Device-SubPlatform: chrome' -H 'Origin: https://www.iwanttfc.com' -H 'Referer: https://www.iwanttfc.com/' \
+            -d "{\"platform\":\"web\",\"subPlatform\":\"chrome\",\"appVersion\":\"3.0.0\",\"appVersionCode\":1,\"playbackSessionId\":\"$SID\",\"playbackCapabilities\":{\"drm\":[\"wv\"],\"streamType\":[\"dash\"],\"resolution\":[\"fhd\"],\"audio\":[\"stereo\"],\"hdr\":[\"hdr10\"]},\"networkType\":\"wifi\",\"deviceId\":\"\",\"referralProperties\":{\"pageName\":\"details\"}}")
+          gh issue create --repo zane108231/pbbextra --title "eps-test2 result" --body "$(echo "$RESP" | head -c 400)" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
