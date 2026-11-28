@@ -600,7 +600,10 @@ async function startPlayback(epId, kind) {
   };
   const url = `${IW_ENTITLEMENT}/playback/start/${epId}?offline=false&country=PH&contentId=${epId}&platform=web&subPlatform=${k.subPlatform}`;
   const res = await fetch(url, { method: 'POST', headers: IW_HEADERS, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error('playback/start ' + res.status);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error('playback/start ' + res.status + ': ' + errBody.slice(0, 300));
+  }
   const json = await res.json();
   const streamUrl = json.playbackInfo && json.playbackInfo.url;
   const licenseUrl = json.playbackInfo && json.playbackInfo.licenseUrl;
