@@ -4,3 +4,4 @@ hdntl-token.json
 manifest-mode.json
 live-edge.json
 *.log
+.wrangler/

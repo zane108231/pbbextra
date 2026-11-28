@@ -579,50 +579,31 @@ async function getReplayEpisodes() {
   }));
 }
 
-async function startPlayback(epId, kind) {
-  const k = REPLAY_KINDS[kind];
-  const body = {
-    platform: 'web',
-    subPlatform: k.subPlatform,
-    appVersion: '3.0.0',
-    appVersionCode: 1,
-    playbackSessionId: crypto.randomUUID(),
-    playbackCapabilities: {
-      drm: k.drm,
-      streamType: k.streamType,
-      resolution: ['fhd', 'hd', 'sd'],
-      audio: ['stereo'],
-      hdr: ['hdr10'],
-    },
-    networkType: 'wifi',
-    deviceId: '',
-    referralProperties: { pageName: 'details' },
-  };
-  const url = `${IW_ENTITLEMENT}/playback/start/${epId}?offline=false&country=PH&contentId=${epId}&platform=web&subPlatform=${k.subPlatform}`;
-  const res = await fetch(url, { method: 'POST', headers: IW_HEADERS, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('playback/start ' + res.status + ': ' + errBody.slice(0, 300));
+// iWantTFC's entitlement API (EPS) blocks Cloudflare Worker egress IPs
+// ("Access blocked due to VPN or proxy usage"). playback/start must be
+// called through a relay on a normal datacenter IP (see replay-relay.js,
+// deploy on Render). The relay URL is set via the REPLAY_RELAY_URL var.
+async function startPlayback(epId, kind, relayUrl) {
+  if (!relayUrl) throw new Error('REPLAY_RELAY_URL not configured');
+  const res = await fetch(`${relayUrl}/session?id=${encodeURIComponent(epId)}&kind=${kind}`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.contentBase) {
+    throw new Error('relay ' + res.status + ': ' + (json.error || 'bad response').slice(0, 200));
   }
-  const json = await res.json();
-  const streamUrl = json.playbackInfo && json.playbackInfo.url;
-  const licenseUrl = json.playbackInfo && json.playbackInfo.licenseUrl;
-  if (!streamUrl) throw new Error('no stream url');
-  const qIdx = streamUrl.indexOf('?');
   return {
-    contentBase: qIdx >= 0 ? streamUrl.slice(0, qIdx).replace(/[^/]+$/, '') : streamUrl.replace(/[^/]+$/, ''),
-    tokenQuery: qIdx >= 0 ? streamUrl.slice(qIdx) : '',
-    licenseUrl: licenseUrl || '',
+    contentBase: json.contentBase,
+    tokenQuery: json.tokenQuery || '',
+    licenseUrl: json.licenseUrl || '',
     fetchedAt: Date.now(),
   };
 }
 
-async function getReplaySession(epId, kind) {
+async function getReplaySession(epId, kind, relayUrl) {
   const key = `${epId}:${kind}`;
   let s = replaySessions.get(key);
   if (s && !s.pending && Date.now() - s.fetchedAt < SESSION_TTL_MS) return s;
   if (s && s.pending) return s.pending;
-  const pending = startPlayback(epId, kind)
+  const pending = startPlayback(epId, kind, relayUrl)
     .then((fresh) => { replaySessions.set(key, fresh); return fresh; })
     .finally(() => { /* pending cleared implicitly by replacement */ });
   replaySessions.set(key, { ...(s || {}), pending });
@@ -860,7 +841,7 @@ export default {
         return Response.json({ error: 'bad episode id' }, { status: 400, headers: corsHeaders() });
       }
       try {
-        const s = await getReplaySession(epId, kind);
+        const s = await getReplaySession(epId, kind, env.REPLAY_RELAY_URL);
         const manifest = REPLAY_KINDS[kind].manifest;
         return Response.json({
           manifest: `/api/replay/${epId}/${kind}/${manifest}`,
@@ -876,7 +857,7 @@ export default {
       const epId = url.searchParams.get('id') || '';
       const kind = url.searchParams.get('kind') === 'fp' ? 'fp' : 'wv';
       try {
-        const s = await getReplaySession(epId, kind);
+        const s = await getReplaySession(epId, kind, env.REPLAY_RELAY_URL);
         if (!s.licenseUrl) return new Response('no license url', { status: 502, headers: corsHeaders() });
         const body = await request.arrayBuffer();
         const upstream = await fetch(s.licenseUrl, {
@@ -904,7 +885,7 @@ export default {
     if (replayMatch) {
       const [, epId, kind, relPath] = replayMatch;
       try {
-        const s = await getReplaySession(epId, kind);
+        const s = await getReplaySession(epId, kind, env.REPLAY_RELAY_URL);
         const upstream = replayUpstreamUrl(s, decodeURIComponent(relPath));
         const upstreamRes = await fetch(upstream, {
           headers: { 'User-Agent': 'Mozilla/5.0', 'Origin': 'https://www.iwanttfc.com', 'Referer': 'https://www.iwanttfc.com/' },

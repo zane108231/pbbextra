@@ -16,3 +16,8 @@ class_name = "ChatRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["ChatRoom"]
+
+# iWantTFC entitlement relay (playback/start is blocked from CF IPs —
+# see replay-relay.js, deploy on Render and set this to its URL)
+[vars]
+REPLAY_RELAY_URL = "https://REPLACE_WITH_RELAY_URL"
