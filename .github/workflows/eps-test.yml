@@ -1,0 +1,20 @@
+name: eps-test
+on: [workflow_dispatch, push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: test playback/start from GH Actions IP
+        run: |
+          EP=38881f38-eda3-4bdd-b33a-395e67cbe07c
+          RESP=$(curl -s -w '\nHTTP:%{http_code}' -X POST "https://api.iwanttfc.com/entitlement/playback/start/$EP?offline=false&country=PH&contentId=$EP&platform=web&subPlatform=chrome" \
+            -H 'Content-Type: application/json' -H 'x-country-code: PH' -H 'x-device-platform: web' \
+            -H 'X-Device-SubPlatform: chrome' -H 'Origin: https://www.iwanttfc.com' -H 'Referer: https://www.iwanttfc.com/' \
+            -d '{"platform":"web","subPlatform":"chrome","appVersion":"3.0.0","appVersionCode":1,"playbackSessionId":"test-1234","playbackCapabilities":{"drm":["wv"],"streamType":["dash"],"resolution":["fhd"],"audio":["stereo"],"hdr":["hdr10"]},"networkType":"wifi","deviceId":"","referralProperties":{"pageName":"details"}}')
+          echo "$RESP" > result.txt
+          cat result.txt
+          gh issue create --repo zane108231/pbbextra --title "eps-test result" --body "$(cat result.txt | head -c 500)" || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
