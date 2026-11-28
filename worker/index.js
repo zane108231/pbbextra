@@ -456,7 +456,7 @@ const keyByInitUrl = new Map();
 function corsHeaders(extra = {}) {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': '*',
     'Cache-Control': 'no-store',
     ...extra,
@@ -510,6 +510,146 @@ function rewriteManifest(mpdText, origin) {
   // Inject right after the opening <MPD ...> tag, before <Period>
   out = out.replace(/<MPD([^>]*)>/, (m) => m + base);
   return out;
+}
+
+/* ============================================================
+   On-Demand Replays — iWantTFC "PBB Collab 3.0 Extra"
+   GraphQL gives episode metadata; the entitlement service
+   (playback/start) issues 60-second Akamai tokens + DRM
+   license URLs. We proxy manifests, segments AND license
+   requests so tokens are always fresh and never exposed.
+   ============================================================ */
+
+const IW_GQL = 'https://api.iwanttfc.com/consumer/graphql';
+const IW_ENTITLEMENT = 'https://api.iwanttfc.com/entitlement';
+const IW_SHOW_ID = 'c56baf24-4ec7-49bd-94ef-6cf6f6b12d77';
+const IW_SHOW_FILTER = { year: 2026, month: 11 };
+const IW_SKUS = ['SVOD033'];
+const IW_IMAGE_BASE = 'https://img.iwanttfc.com';
+
+const IW_HEADERS = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/graphql-response+json',
+  'x-country-code': 'PH',
+  'x-device-platform': 'web',
+  'x-iw-useragent': 'iWant=3.0.0; Platform=web; OSVersion=; Model=chrome; BuildType=release; Environment=production',
+  'Origin': 'https://www.iwanttfc.com',
+  'Referer': 'https://www.iwanttfc.com/',
+};
+
+// kind 'wv' -> Widevine DASH (desktop/Android), 'fp' -> FairPlay HLS (iOS)
+const REPLAY_KINDS = {
+  wv: { drm: ['wv'], streamType: ['dash'], subPlatform: 'chrome', manifest: 'manifest.mpd' },
+  fp: { drm: ['fp'], streamType: ['hls'], subPlatform: 'safari', manifest: 'master.m3u8' },
+};
+
+// `${epId}:${kind}` -> { contentBase, tokenQuery, licenseUrl, fetchedAt, pending }
+const replaySessions = new Map();
+const SESSION_TTL_MS = 45_000; // upstream tokens live ~60s — refresh early
+
+async function iwGraphql(query, variables) {
+  const res = await fetch(IW_GQL, {
+    method: 'POST',
+    headers: IW_HEADERS,
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error('graphql ' + res.status);
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message || 'graphql error');
+  return json.data;
+}
+
+async function getReplayEpisodes() {
+  const data = await iwGraphql(
+    `query TvShowEpisodes($tvShowEpisodesId: ID, $filters: TvShowEpisodesFilterInput, $skus: [String!]) {
+      tvShowEpisodes(id: $tvShowEpisodesId, filters: $filters, skus: $skus) {
+        items { id title subHeader isPlayable durationInSeconds imagesV2 { lt } }
+        totalItems
+      }
+    }`,
+    { tvShowEpisodesId: IW_SHOW_ID, filters: IW_SHOW_FILTER, skus: IW_SKUS });
+  const items = data.tvShowEpisodes.items || [];
+  return items.map((it) => ({
+    id: it.id,
+    title: it.title,
+    label: it.subHeader || it.title,
+    duration: it.durationInSeconds || 0,
+    playable: !!it.isPlayable,
+    image: it.imagesV2 && it.imagesV2.lt ? IW_IMAGE_BASE + it.imagesV2.lt : '',
+  }));
+}
+
+async function startPlayback(epId, kind) {
+  const k = REPLAY_KINDS[kind];
+  const body = {
+    platform: 'web',
+    subPlatform: k.subPlatform,
+    appVersion: '3.0.0',
+    appVersionCode: 1,
+    playbackSessionId: crypto.randomUUID(),
+    playbackCapabilities: {
+      drm: k.drm,
+      streamType: k.streamType,
+      resolution: ['fhd', 'hd', 'sd'],
+      audio: ['stereo'],
+      hdr: ['hdr10'],
+    },
+    networkType: 'wifi',
+    deviceId: '',
+    referralProperties: { pageName: 'details' },
+  };
+  const url = `${IW_ENTITLEMENT}/playback/start/${epId}?offline=false&country=PH&contentId=${epId}&platform=web&subPlatform=${k.subPlatform}`;
+  const res = await fetch(url, { method: 'POST', headers: IW_HEADERS, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error('playback/start ' + res.status);
+  const json = await res.json();
+  const streamUrl = json.playbackInfo && json.playbackInfo.url;
+  const licenseUrl = json.playbackInfo && json.playbackInfo.licenseUrl;
+  if (!streamUrl) throw new Error('no stream url');
+  const qIdx = streamUrl.indexOf('?');
+  return {
+    contentBase: qIdx >= 0 ? streamUrl.slice(0, qIdx).replace(/[^/]+$/, '') : streamUrl.replace(/[^/]+$/, ''),
+    tokenQuery: qIdx >= 0 ? streamUrl.slice(qIdx) : '',
+    licenseUrl: licenseUrl || '',
+    fetchedAt: Date.now(),
+  };
+}
+
+async function getReplaySession(epId, kind) {
+  const key = `${epId}:${kind}`;
+  let s = replaySessions.get(key);
+  if (s && !s.pending && Date.now() - s.fetchedAt < SESSION_TTL_MS) return s;
+  if (s && s.pending) return s.pending;
+  const pending = startPlayback(epId, kind)
+    .then((fresh) => { replaySessions.set(key, fresh); return fresh; })
+    .finally(() => { /* pending cleared implicitly by replacement */ });
+  replaySessions.set(key, { ...(s || {}), pending });
+  try {
+    const fresh = await pending;
+    return fresh;
+  } finally {
+    const cur = replaySessions.get(key);
+    if (cur && cur.pending === pending) delete cur.pending;
+  }
+}
+
+function replayUpstreamUrl(session, relPath) {
+  // relPath is the path relative to the content root, e.g.
+  // 'manifest/video/avc1/1/seg-12.m4s' or 'master/media-2/stream.m3u8'
+  const clean = relPath.replace(/^\/+/, '');
+  if (clean.includes('..')) throw new Error('bad path');
+  return session.contentBase + clean + session.tokenQuery;
+}
+
+function contentTypeFor(path) {
+  if (path.endsWith('.mpd')) return 'application/dash+xml; charset=utf-8';
+  if (path.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
+  if (path.endsWith('.mp4') || path.endsWith('.m4s') || path.endsWith('.ts') || path.endsWith('.m4a') || path.endsWith('.aac')) {
+    return path.endsWith('.ts') ? 'video/mp2t' : 'video/mp4';
+  }
+  if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg';
+  if (path.endsWith('.vtt')) return 'text/vtt';
+  if (path.endsWith('.json')) return 'application/json';
+  return 'application/octet-stream';
 }
 
 /* ============================================================
@@ -694,6 +834,92 @@ export default {
         });
       } catch (e) {
         return new Response('segment failed: ' + e.message, { status: 502, headers: corsHeaders() });
+      }
+    }
+
+    // --- Replay episode list ---
+    if (path === '/api/replays') {
+      try {
+        const episodes = await getReplayEpisodes();
+        return Response.json({ episodes }, {
+          headers: { 'Cache-Control': 'public, max-age=120', ...corsHeaders() },
+        });
+      } catch (e) {
+        return Response.json({ error: 'replays unavailable: ' + e.message }, { status: 502, headers: corsHeaders() });
+      }
+    }
+
+    // --- Replay session bootstrap: returns proxied manifest + license URLs ---
+    if (path === '/api/replay/session') {
+      const epId = url.searchParams.get('id') || '';
+      const kind = url.searchParams.get('kind') === 'fp' ? 'fp' : 'wv';
+      if (!/^[0-9a-f-]{36}$/i.test(epId)) {
+        return Response.json({ error: 'bad episode id' }, { status: 400, headers: corsHeaders() });
+      }
+      try {
+        const s = await getReplaySession(epId, kind);
+        const manifest = REPLAY_KINDS[kind].manifest;
+        return Response.json({
+          manifest: `/api/replay/${epId}/${kind}/${manifest}`,
+          license: `/api/replay/license?id=${epId}&kind=${kind}`,
+        }, { headers: { 'Cache-Control': 'no-store', ...corsHeaders() } });
+      } catch (e) {
+        return Response.json({ error: 'session failed: ' + e.message }, { status: 502, headers: corsHeaders() });
+      }
+    }
+
+    // --- DRM license proxy: forwards the challenge to ezdrm with a fresh token ---
+    if (path === '/api/replay/license' && request.method === 'POST') {
+      const epId = url.searchParams.get('id') || '';
+      const kind = url.searchParams.get('kind') === 'fp' ? 'fp' : 'wv';
+      try {
+        const s = await getReplaySession(epId, kind);
+        if (!s.licenseUrl) return new Response('no license url', { status: 502, headers: corsHeaders() });
+        const body = await request.arrayBuffer();
+        const upstream = await fetch(s.licenseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': request.headers.get('Content-Type') || 'application/octet-stream',
+          },
+          body,
+        });
+        const respBody = await upstream.arrayBuffer();
+        return new Response(respBody, {
+          status: upstream.status,
+          headers: {
+            ...corsHeaders(),
+            'Content-Type': upstream.headers.get('Content-Type') || 'application/octet-stream',
+          },
+        });
+      } catch (e) {
+        return new Response('license proxy failed: ' + e.message, { status: 502, headers: corsHeaders() });
+      }
+    }
+
+    // --- Replay manifest + media proxy: /api/replay/<ep>/<kind>/<path> ---
+    const replayMatch = path.match(/^\/api\/replay\/([0-9a-f-]{36})\/(wv|fp)\/(.+)$/i);
+    if (replayMatch) {
+      const [, epId, kind, relPath] = replayMatch;
+      try {
+        const s = await getReplaySession(epId, kind);
+        const upstream = replayUpstreamUrl(s, decodeURIComponent(relPath));
+        const upstreamRes = await fetch(upstream, {
+          headers: { 'User-Agent': 'Mozilla/5.0', 'Origin': 'https://www.iwanttfc.com', 'Referer': 'https://www.iwanttfc.com/' },
+          cf: { cacheTtl: 2 },
+        });
+        if (!upstreamRes.ok) {
+          return new Response('upstream ' + upstreamRes.status, { status: upstreamRes.status, headers: corsHeaders() });
+        }
+        const isManifest = /\.(mpd|m3u8)$/i.test(relPath);
+        const headers = corsHeaders({
+          'Content-Type': contentTypeFor(relPath),
+          ...(isManifest ? { 'Cache-Control': 'no-store' } : {}),
+        });
+        // Manifests/playlists are small text — pass through as-is; relative
+        // URLs inside resolve back against our proxy path automatically.
+        return new Response(upstreamRes.body, { headers });
+      } catch (e) {
+        return new Response('replay proxy failed: ' + e.message, { status: 502, headers: corsHeaders() });
       }
     }
 
