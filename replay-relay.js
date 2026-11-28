@@ -82,6 +82,13 @@ async function startPlayback(epId, kind) {
   const headers = { ...IW_HEADERS };
   const accessToken = await getAccessToken();
   if (accessToken) headers.authorization = `Bearer ${accessToken}`;
+  // Geo-spoof attempts: some EPS deployments trust forwarded headers over
+  // connection IP for region checks.
+  headers['x-forwarded-for'] = '112.198.0.1';
+  headers['x-real-ip'] = '112.198.0.1';
+  headers['cf-ipcountry'] = 'PH';
+  headers['x-geo-country'] = 'PH';
+  headers['cloudfront-viewer-country'] = 'PH';
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) throw new Error(`playback/start ${res.status}: ${text.slice(0, 200)}`);
